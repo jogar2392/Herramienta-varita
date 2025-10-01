@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Varita en desarrollo</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+<style>
+  body { margin:0; overflow:hidden; background:#f0f4f8; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+  canvas { position:absolute; top:0; left:0; touch-action:none; cursor: crosshair; }
+  #controls { position: fixed; top:10px; left:50%; transform: translateX(-50%); background: rgba(255,255,255,0.95);
+    padding:10px 15px; border-radius:12px; display:flex; gap:10px; align-items:center; z-index:10;
+    box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+  #controls input[type="color"] { width:40px; height:40px; border:none; border-radius:50%; cursor:pointer; padding:0; }
+  #controls input[type="range"] { cursor:pointer; }
+  #controls button { background:#4f46e5; color:white; border:none; padding:8px 12px; border-radius:8px;
+    cursor:pointer; font-weight:500; display:flex; align-items:center; justify-content:center; gap:5px;
+    transition:background 0.2s, transform 0.1s; }
+  #controls button:hover { background:#4338ca; transform:translateY(-2px); }
+  #controls button:active { transform:translateY(1px); }
+</style>
+</head>
+<body>
+<div id="controls">
+  <input type="color" id="colorPicker" value="#000000">
+  <input type="range" id="brushSize" min="1" max="20" value="3">
+  <button id="toggleWandBtn"><i class="fas fa-magic"></i></button>
+  <button id="paintWandBtn"><i class="fas fa-paint-brush"></i></button>
+  <button id="moveWandBtn"><i class="fas fa-arrows-alt"></i></button>
+  <button id="eraserBtn"><i class="fas fa-eraser"></i></button>
+  <button id="clearBtn"><i class="fas fa-trash-alt"></i></button>
+  <button id="captureBtn"><i class="fas fa-camera"></i></button>
+  <button id="downloadBtn"><i class="fas fa-download"></i></button>
+</div>
+<canvas id="drawCanvas"></canvas>
+<canvas id="wandCanvas"></canvas>
+<script>
+const drawCanvas = document.getElementById("drawCanvas");
+const drawCtx = drawCanvas.getContext("2d");
+const wandCanvas = document.getElementById("wandCanvas");
+const wandCtx = wandCanvas.getContext("2d");
+
+function resizeCanvas(){ drawCanvas.width = wandCanvas.width = window.innerWidth; drawCanvas.height = wandCanvas.height = window.innerHeight; }
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+const colorPicker = document.getElementById("colorPicker");
+const brushSize = document.getElementById("brushSize");
+const toggleWandBtn = document.getElementById("toggleWandBtn");
+const paintWandBtn = document.getElementById("paintWandBtn");
+const moveWandBtn = document.getElementById("moveWandBtn");
+const eraserBtn = document.getElementById("eraserBtn");
+const clearBtn = document.getElementById("clearBtn");
+const captureBtn = document.getElementById("captureBtn");
+const downloadBtn = document.getElementById("downloadBtn");
+
+let varitaActiva=false, varitaPinta=true, moverVarita=false, borradorActivo=false;
+let baseX=window.innerWidth/2, baseY=window.innerHeight/2;
+let puntaX=baseX, puntaY=baseY-120;
+const longitudVarita=120;
+let velocidadX=0, velocidadY=0;
+const stiffness=0.15, damping=0.7;
+let prevX=puntaX, prevY=puntaY;
+let snapshots=[];
+
+function updatePhysics(){
+  const targetX=baseX, targetY=baseY-longitudVarita;
+  const forceX=(targetX-puntaX)*stiffness;
+  const forceY=(targetY-puntaY)*stiffness;
+  velocidadX=(velocidadX+forceX)*damping;
+  velocidadY=(velocidadY+forceY)*damping;
+  puntaX+=velocidadX; puntaY+=velocidadY;
+}
+
+function drawVarita(){
+  wandCtx.clearRect(0,0,wandCanvas.width,wandCanvas.height);
+  if(!varitaActiva) return;
+  wandCtx.beginPath(); wandCtx.moveTo(baseX, baseY); wandCtx.lineTo(puntaX, puntaY);
+  wandCtx.strokeStyle="rgba(0,0,0,0.4)"; wandCtx.lineWidth=2; wandCtx.stroke();
+  wandCtx.beginPath(); wandCtx.arc(baseX, baseY, 10, 0, Math.PI*2); wandCtx.fillStyle="rgba(0,0,255,0.5)"; wandCtx.fill();
+  wandCtx.beginPath(); wandCtx.arc(puntaX, puntaY, 6, 0, Math.PI*2); wandCtx.fillStyle="red"; wandCtx.fill();
+}
+
+function drawFrame(){
+  requestAnimationFrame(drawFrame);
+  if(varitaActiva){ updatePhysics();
+    if(varitaPinta && prevX!==null && prevY!==null){
+      drawCtx.strokeStyle=borradorActivo?"#fff":colorPicker.value;
+      drawCtx.lineWidth=brushSize.value; drawCtx.lineCap="round";
+      drawCtx.beginPath(); drawCtx.moveTo(prevX, prevY); drawCtx.lineTo(puntaX, puntaY); drawCtx.stroke();
+    }
+    prevX=puntaX; prevY=puntaY;
+  }
+  drawVarita();
+}
+drawFrame();
+
+function drawDedo(x,y){
+  if(prevX!==null && prevY!==null){
+    drawCtx.strokeStyle=borradorActivo?"#fff":colorPicker.value;
+    drawCtx.lineWidth=brushSize.value; drawCtx.lineCap="round";
+    drawCtx.beginPath(); drawCtx.moveTo(prevX, prevY); drawCtx.lineTo(x, y); drawCtx.stroke();
+  }
+  prevX=x; prevY=y;
+}
+
+function getPos(e){ if(e.touches) return {x:e.touches[0].clientX, y:e.touches[0].clientY}; return {x:e.clientX, y:e.clientY}; }
+
+function handleStart(e){
+  const pos=getPos(e);
+  if(moverVarita && varitaActiva){ baseX=pos.x; baseY=pos.y; puntaX=baseX; puntaY=baseY-longitudVarita; }
+  else { prevX=varitaActiva?puntaX:pos.x; prevY=varitaActiva?puntaY:pos.y; }
+}
+function handleMove(e){ const pos=getPos(e); if(!varitaActiva) drawDedo(pos.x,pos.y); else if(moverVarita){ baseX=pos.x; baseY=pos.y; } }
+function handleEnd(){ prevX=varitaActiva?puntaX:null; prevY=varitaActiva?puntaY:null; }
+
+wandCanvas.addEventListener("mousedown", handleStart);
+wandCanvas.addEventListener("mousemove", handleMove);
+wandCanvas.addEventListener("mouseup", handleEnd);
+wandCanvas.addEventListener("mouseleave", handleEnd);
+wandCanvas.addEventListener("touchstart", e=>{handleStart(e);});
+wandCanvas.addEventListener("touchmove", e=>{e.preventDefault(); handleMove(e);},{passive:false});
+wandCanvas.addEventListener("touchend", handleEnd);
+
+toggleWandBtn.addEventListener("click", ()=>{ varitaActiva=!varitaActiva; toggleWandBtn.style.background=varitaActiva?"#22c55e":"#4f46e5"; });
+paintWandBtn.addEventListener("click", ()=>{ varitaPinta=!varitaPinta; paintWandBtn.style.background=varitaPinta?"#4f46e5":"#f59e0b"; });
+moveWandBtn.addEventListener("click", ()=>{ moverVarita=!moverVarita; moveWandBtn.style.background="#4f46e5"; });
+eraserBtn.addEventListener("click", ()=>{ borradorActivo=!borradorActivo; eraserBtn.style.background=borradorActivo?"#f87171":"#4f46e5"; });
+clearBtn.addEventListener("click", ()=>drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height));
+captureBtn.addEventListener("click", ()=>{ snapshots.push(drawCanvas.toDataURL()); alert(`Imagen capturada. Total: ${snapshots.length}`); });
+downloadBtn.addEventListener("click", ()=>{ if(snapshots.length===0){ const link=document.createElement('a'); link.download='dibujo.png'; link.href=drawCanvas.toDataURL(); link.click(); } else { snapshots.forEach((src,i)=>{ const link=document.createElement('a'); link.href=src; link.download=`imagen_${i+1}.png`; link.click(); }); snapshots=[]; } });
+
+// Registrar service worker
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('service-worker.js').then(()=>console.log('SW registrado ✅')).catch(err=>console.error(err)); }
+</script>
+</body></html>
